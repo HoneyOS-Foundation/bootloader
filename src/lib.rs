@@ -24,11 +24,32 @@ fn main() -> anyhow::Result<()> {
 
     let bytes = request.data()?;
     let mut cursor = Cursor::new(bytes);
-    let rootfs = zip::ZipArchive::new(&mut cursor)?;
+    let mut rootfs = zip::ZipArchive::new(&mut cursor)?;
+
+    let mut files: Vec<String> = vec![];
+    let mut directories: Vec<String> = vec![];
+
+    for i in 0..rootfs.len() {
+        let part = match rootfs.by_index(i) {
+            Ok(part) => part,
+            Err(e) => {
+                log::error!("{}", e);
+                continue;
+            }
+        };
+        let name = part.name();
+        if part.is_file() {
+            files.push(name.to_string());
+            continue;
+        }
+        if part.is_dir() {
+            directories.push(name.to_string());
+        }
+    }
 
     display.set_text(format!(
-        "Fetched rootfs: {:?}",
-        rootfs.file_names().collect::<Vec<&str>>()
+        "Fetched rootfs: \n - Files: {:?}\n - Directories: {:?}",
+        files, directories
     ))?;
 
     unsafe {
