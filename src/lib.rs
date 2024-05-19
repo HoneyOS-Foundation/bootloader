@@ -1,9 +1,15 @@
-use std::{ffi::CString, io::Cursor};
+use std::{
+    ffi::CString,
+    io::{Cursor, Read},
+    time::Duration,
+};
 
 use hapi::{
-    display::DisplayServer,
+    display::{Display, DisplayServer},
+    fs::{dir::Directory, fslabel::FsLabel, File, RamFileSystem},
     js_console::JsConsoleLogger,
     network::{Request, RequestMethod, RequestStatus},
+    process::Process,
 };
 
 #[hapi::main]
@@ -13,98 +19,101 @@ fn main() -> anyhow::Result<()> {
     let mut display = DisplayServer::register();
     DisplayServer::claim(&display)?;
 
-    display.set_text("Fetching rootfs")?;
+    hapi::println!("Rootfs fetched succesfully");
+    hapi::println!("Mounting ramdisk at C:/");
+    display.push_stdout()?;
+
+    RamFileSystem::init(FsLabel::C)?;
+
+    hapi::stdout::clear_line();
+    hapi::println!("Mounted ramdisk at C:/");
+    display.push_stdout()?;
+
+    extract_rootfs(&mut display)?;
+
+    hapi::println!("Starting boot process");
+    display.push_stdout()?;
+
+    let boot_process = match File::open("C:/bin/beofetch.wasm") {
+        Ok(b) => b,
+        Err(e) => {
+            hapi::println!("\x1b[31mFailed to read boot binary\x1b[97m: {}", e);
+            display.push_stdout()?;
+            return Ok(());
+        }
+    };
+    display.push_stdout()?;
+    let boot_process_bin = match boot_process.read_all() {
+        Ok(b) => b,
+        Err(e) => {
+            hapi::println!("\x1b[31mFailed to read boot binary \x1b[97m: {}", e);
+            display.push_stdout()?;
+            return Ok(());
+        }
+    };
+    display.push_stdout()?;
+    let Some(process) = Process::spawn_sub(&boot_process_bin) else {
+        hapi::println!("\x1b[31mFailed to spawn boot binary");
+        display.push_stdout()?;
+        return Ok(());
+    };
+
+    hapi::stdout::clear();
+    loop {
+        if let Some(out) = process.stdout() {
+            display.set_text(out)?;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Extract rootfs and display the output
+pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
+    hapi::println!("Fetching rootfs");
+    display.push_stdout()?;
+
     let request = Request::new("rootfs.zip", RequestMethod::Get, "{}")?;
     request.wait()?;
 
     if request.status()? == RequestStatus::Fail {
-        display.set_text("Failed to fetch rootfs")?;
+        hapi::println!("\x1b[31mFailed to fetch rootfs\x1b[97m");
+        display.push_stdout()?;
         return Ok(());
     }
+
+    hapi::println!("\x1b[32mSuccesfully fetched rootfs\x1b[97m");
+    display.push_stdout()?;
 
     let bytes = request.data()?;
     let mut cursor = Cursor::new(bytes);
     let mut rootfs = zip::ZipArchive::new(&mut cursor)?;
 
-    let mut files: Vec<String> = vec![];
-    let mut directories: Vec<String> = vec![];
-
     for i in 0..rootfs.len() {
         let part = match rootfs.by_index(i) {
-            Ok(part) => part,
+            Ok(p) => p,
             Err(e) => {
-                log::error!("{}", e);
+                hapi::println!("\x1b[31mFailed to read part: {}\x1b[97m", e);
+                display.push_stdout()?;
                 continue;
             }
         };
         let name = part.name();
+        let path = format!("C:/{}", name);
         if part.is_file() {
-            files.push(name.to_string());
+            let mut file = File::create(&path)?;
+            let bytes = part.bytes();
+            let bytes = bytes
+                .filter(|f| f.is_ok())
+                .map(|f| f.unwrap())
+                .collect::<Vec<u8>>();
+            file.write(0, &bytes)?;
             continue;
         }
         if part.is_dir() {
-            directories.push(name.to_string());
+            Directory::create(&path)?;
         }
-    }
-
-    display.set_text(format!(
-        "Fetched rootfs: \n - Files: {:?}\n - Directories: {:?}",
-        files, directories
-    ))?;
-
-    unsafe {
-        let result = hapi::ffi::hapi_fs_init_ramfs('C' as u8);
-        if result < 0 {
-            log::error!("Failed to initialize ramfs: {}", result);
-            return Err(anyhow::anyhow!("Failed to initialize ramfs: {}", result));
-        }
-
-        let path = CString::new("C:/hi.txt").unwrap();
-        let result = hapi::ffi::hapi_fs_file_create(path.as_ptr() as *const u8);
-        if result < 0 {
-            log::error!("Failed to create file: {}", result);
-            return Err(anyhow::anyhow!("Failed to create file: {}", result));
-        }
-
-        let mut id = vec![0 as u8; 37];
-        let result = hapi::ffi::hapi_fs_file_get(path.as_ptr() as *const u8, &mut id[0] as *mut u8);
-        let id = CString::from_vec_with_nul(id).unwrap();
-
-        if result < 0 {
-            log::error!("Failed to get file id!: {}", result);
-            return Err(anyhow::anyhow!("Failed to get file id: {}", result));
-        }
-
-        let contents = "Hello File system!".to_string();
-        let contents_cstring = CString::new(contents.clone()).unwrap();
-        let result = hapi::ffi::hapi_fs_file_write(
-            'C' as u8,
-            id.as_ptr() as *const u8,
-            0,
-            contents.chars().count() as u32 + 1,
-            contents_cstring.as_ptr() as *const u8,
-        );
-
-        if result < 0 {
-            log::error!("Failed to write to file: {}", result);
-            return Err(anyhow::anyhow!("Failed to write to file: {}", result));
-        }
-
-        let mut read_contents = vec![0 as u8; contents.chars().count() + 1];
-        let result = hapi::ffi::hapi_fs_file_read(
-            'C' as u8,
-            id.as_ptr() as *const u8,
-            0,
-            contents.chars().count() as u32 + 1,
-            &mut read_contents[0] as *mut u8,
-        );
-
-        if result < 0 {
-            log::error!("Failed to read from file: {}", result);
-            return Err(anyhow::anyhow!("Failed to read from file: {}", result));
-        }
-
-        log::info!("{:?}", CString::from_vec_with_nul(read_contents));
+        hapi::println!("Extracted \"{}\"", path);
+        display.push_stdout()?;
     }
 
     Ok(())
