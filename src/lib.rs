@@ -1,5 +1,4 @@
 use std::{
-    ffi::CString,
     io::{Cursor, Read},
     time::Duration,
 };
@@ -31,40 +30,11 @@ fn main() -> anyhow::Result<()> {
 
     extract_rootfs(&mut display)?;
 
-    hapi::println!("Starting boot process");
+    hapi::println!("Executing startup process");
     display.push_stdout()?;
 
-    let boot_process = match File::open("C:/bin/beofetch.wasm") {
-        Ok(b) => b,
-        Err(e) => {
-            hapi::println!("\x1b[31mFailed to read boot binary\x1b[97m: {}", e);
-            display.push_stdout()?;
-            return Ok(());
-        }
-    };
-    display.push_stdout()?;
-    let boot_process_bin = match boot_process.read_all() {
-        Ok(b) => b,
-        Err(e) => {
-            hapi::println!("\x1b[31mFailed to read boot binary \x1b[97m: {}", e);
-            display.push_stdout()?;
-            return Ok(());
-        }
-    };
-    display.push_stdout()?;
-    let Some(process) = Process::spawn_sub(&boot_process_bin) else {
-        hapi::println!("\x1b[31mFailed to spawn boot binary");
-        display.push_stdout()?;
-        return Ok(());
-    };
-
-    hapi::stdout::clear();
-    loop {
-        if let Some(out) = process.stdout() {
-            display.set_text(out)?;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    startup_process(&mut display)?;
+    Ok(())
 }
 
 /// Extract rootfs and display the output
@@ -81,6 +51,7 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    hapi::stdout::clear_line();
     hapi::println!("\x1b[32mSuccesfully fetched rootfs\x1b[97m");
     display.push_stdout()?;
 
@@ -116,5 +87,45 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
         display.push_stdout()?;
     }
 
+    hapi::process::set_cwd("C:/");
+
     Ok(())
+}
+
+/// Execute startup process
+fn startup_process(display: &mut Display) -> anyhow::Result<()> {
+    let boot_process = match File::open("bin/beofetch.wasm") {
+        Ok(b) => b,
+        Err(e) => {
+            hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
+            log::info!("Failed to read startup binary");
+            display.push_stdout()?;
+            return Ok(());
+        }
+    };
+    display.push_stdout()?;
+    let boot_process_bin = match boot_process.read_all() {
+        Ok(b) => b,
+        Err(e) => {
+            hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
+            log::info!("Failed to read startup binary");
+            display.push_stdout()?;
+            return Ok(());
+        }
+    };
+    display.push_stdout()?;
+    let Some(process) = Process::spawn_sub(&boot_process_bin) else {
+        hapi::println!("\x1b[31mFailed to spawn startup process\x1b[97m");
+        log::info!("Failed to execute startup binary");
+        display.push_stdout()?;
+        return Ok(());
+    };
+
+    hapi::stdout::clear();
+    loop {
+        if let Some(out) = process.stdout() {
+            display.set_text(out)?;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
