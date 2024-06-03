@@ -1,5 +1,6 @@
 use std::{
     io::{Cursor, Read},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -11,9 +12,23 @@ use hapi::{
     process::Process,
 };
 
+static mut THREAD_SUCCESS: Option<Arc<Mutex<()>>> = None;
+
 #[hapi::main]
 fn main() -> anyhow::Result<()> {
     JsConsoleLogger::init();
+
+    unsafe {
+        THREAD_SUCCESS = Some(Arc::new(Mutex::new(())));
+    }
+
+    hapi::thread::spawn(|| {
+        let lock = unsafe { THREAD_SUCCESS.as_ref().unwrap().clone() };
+        let _success_flag = lock.lock().unwrap();
+        loop {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    });
 
     let mut display = DisplayServer::register();
     DisplayServer::claim(&display)?;
@@ -33,7 +48,20 @@ fn main() -> anyhow::Result<()> {
     hapi::println!("Executing startup process");
     display.push_stdout()?;
 
-    startup_process(&mut display)?;
+    let thread = unsafe { THREAD_SUCCESS.as_ref().unwrap().clone() };
+
+    loop {
+        hapi::stdout::clear_line();
+        if let Err(_) = thread.try_lock() {
+            hapi::println!("\x1b[32mThread spawned succesfully!\x1b[97m");
+            display.push_stdout()?;
+            break;
+        } else {
+            hapi::println!("\x1b[31mThread not spawned yet!\x1b[97m");
+            display.push_stdout()?;
+        }
+    }
+    // startup_process(&mut display)?;
     Ok(())
 }
 
@@ -98,7 +126,6 @@ fn startup_process(display: &mut Display) -> anyhow::Result<()> {
         Ok(b) => b,
         Err(e) => {
             hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
-            log::info!("Failed to read startup binary");
             display.push_stdout()?;
             return Ok(());
         }
@@ -108,7 +135,6 @@ fn startup_process(display: &mut Display) -> anyhow::Result<()> {
         Ok(b) => b,
         Err(e) => {
             hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
-            log::info!("Failed to read startup binary");
             display.push_stdout()?;
             return Ok(());
         }
@@ -116,16 +142,18 @@ fn startup_process(display: &mut Display) -> anyhow::Result<()> {
     display.push_stdout()?;
     let Some(process) = Process::spawn_sub(&boot_process_bin) else {
         hapi::println!("\x1b[31mFailed to spawn startup process\x1b[97m");
-        log::info!("Failed to execute startup binary");
         display.push_stdout()?;
         return Ok(());
     };
 
     hapi::stdout::clear();
     loop {
+        std::thread::sleep(Duration::from_millis(200));
         if let Some(out) = process.stdout() {
             display.set_text(out)?;
+            break;
         }
-        std::thread::sleep(Duration::from_millis(100));
     }
+
+    Ok(())
 }

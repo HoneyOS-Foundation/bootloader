@@ -10,5 +10,4 @@ crate-type = ["cdylib"]
 anyhow = "1.0.82"
 hapi = { path = "../hapi", features = ["logger"] }
 log = "0.4.21"
-wasm_thread = "0.3.0"
 zip = { version = "1.2.3", default-features = false, features = ["deflate"] }
