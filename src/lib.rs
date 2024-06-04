@@ -1,59 +1,53 @@
-use std::{
-    io::{Cursor, Read},
-    time::Duration,
-};
+use std::io::{Cursor, Read};
 
 use hapi::{
-    display::{Display, DisplayServer},
+    display::Display,
     fs::{dir::Directory, fslabel::FsLabel, File, RamFileSystem},
     js_console::JsConsoleLogger,
     network::{Request, RequestMethod, RequestStatus},
-    process::{self, Process},
+    process::Process,
 };
 
 #[hapi::main]
 fn main() -> anyhow::Result<()> {
     JsConsoleLogger::init();
 
-    let mut display = DisplayServer::register();
-    DisplayServer::claim(&display)?;
-
     hapi::println!("Rootfs fetched succesfully");
     hapi::println!("Mounting ramdisk at C:/");
-    display.push_stdout()?;
+    Display::push_stdout()?;
 
     RamFileSystem::init(FsLabel::C)?;
 
     hapi::stdout::clear_line();
     hapi::println!("Mounted ramdisk at C:/");
-    display.push_stdout()?;
+    Display::push_stdout()?;
 
-    extract_rootfs(&mut display)?;
+    extract_rootfs()?;
 
     hapi::println!("Executing startup process");
-    display.push_stdout()?;
+    Display::push_stdout()?;
 
-    startup_process(&mut display)?;
+    startup_process()?;
     Ok(())
 }
 
 /// Extract rootfs and display the output
-pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
+pub fn extract_rootfs() -> anyhow::Result<()> {
     hapi::println!("Fetching rootfs");
-    display.push_stdout()?;
+    Display::push_stdout()?;
 
     let request = Request::new("rootfs.zip", RequestMethod::Get, "{}")?;
     request.wait()?;
 
     if request.status()? == RequestStatus::Fail {
         hapi::println!("\x1b[31mFailed to fetch rootfs\x1b[97m");
-        display.push_stdout()?;
+        Display::push_stdout()?;
         return Ok(());
     }
 
     hapi::stdout::clear_line();
     hapi::println!("\x1b[32mSuccesfully fetched rootfs\x1b[97m");
-    display.push_stdout()?;
+    Display::push_stdout()?;
 
     let bytes = request.data()?;
     let mut cursor = Cursor::new(bytes);
@@ -64,7 +58,7 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
             Ok(p) => p,
             Err(e) => {
                 hapi::println!("\x1b[31mFailed to read part: {}\x1b[97m", e);
-                display.push_stdout()?;
+                Display::push_stdout()?;
                 continue;
             }
         };
@@ -85,7 +79,7 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
             Directory::create(&path)?;
             hapi::println!("Extracted \"{}\"", path);
         }
-        display.push_stdout()?;
+        Display::push_stdout()?;
     }
 
     hapi::process::set_cwd("C:/");
@@ -94,31 +88,31 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
 }
 
 /// Execute startup process
-fn startup_process(display: &mut Display) -> anyhow::Result<()> {
+fn startup_process() -> anyhow::Result<()> {
     let boot_process = match File::open("bin/beofetch.wasm") {
         Ok(b) => b,
         Err(e) => {
             hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
-            display.push_stdout()?;
+            Display::push_stdout()?;
             return Ok(());
         }
     };
-    display.push_stdout()?;
+    Display::push_stdout()?;
     let boot_process_bin = match boot_process.read_all() {
         Ok(b) => b,
         Err(e) => {
             hapi::println!("\x1b[31mFailed to read startup binary \x1b[97m: {}", e);
-            display.push_stdout()?;
+            Display::push_stdout()?;
             return Ok(());
         }
     };
-    display.push_stdout()?;
+    Display::push_stdout()?;
     if let Some(_) = Process::spawn_sub(&boot_process_bin) {
         hapi::println!("\x1b[32mSuccesfully spawned startup process\x1b[97m");
-        display.push_stdout()?;
+        Display::push_stdout()?;
     } else {
         hapi::println!("\x1b[31mFailed to spawn startup process \x1b[97m");
-        display.push_stdout()?;
+        Display::push_stdout()?;
     }
 
     Ok(())
