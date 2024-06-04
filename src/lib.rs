@@ -1,6 +1,5 @@
 use std::{
     io::{Cursor, Read},
-    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -9,26 +8,12 @@ use hapi::{
     fs::{dir::Directory, fslabel::FsLabel, File, RamFileSystem},
     js_console::JsConsoleLogger,
     network::{Request, RequestMethod, RequestStatus},
-    process::Process,
+    process::{self, Process},
 };
-
-static mut THREAD_SUCCESS: Option<Arc<Mutex<()>>> = None;
 
 #[hapi::main]
 fn main() -> anyhow::Result<()> {
     JsConsoleLogger::init();
-
-    unsafe {
-        THREAD_SUCCESS = Some(Arc::new(Mutex::new(())));
-    }
-
-    hapi::thread::spawn(|| {
-        let lock = unsafe { THREAD_SUCCESS.as_ref().unwrap().clone() };
-        let _success_flag = lock.lock().unwrap();
-        loop {
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    });
 
     let mut display = DisplayServer::register();
     DisplayServer::claim(&display)?;
@@ -48,20 +33,7 @@ fn main() -> anyhow::Result<()> {
     hapi::println!("Executing startup process");
     display.push_stdout()?;
 
-    let thread = unsafe { THREAD_SUCCESS.as_ref().unwrap().clone() };
-
-    loop {
-        hapi::stdout::clear_line();
-        if let Err(_) = thread.try_lock() {
-            hapi::println!("\x1b[32mThread spawned succesfully!\x1b[97m");
-            display.push_stdout()?;
-            break;
-        } else {
-            hapi::println!("\x1b[31mThread not spawned yet!\x1b[97m");
-            display.push_stdout()?;
-        }
-    }
-    // startup_process(&mut display)?;
+    startup_process(&mut display)?;
     Ok(())
 }
 
@@ -106,12 +78,13 @@ pub fn extract_rootfs(display: &mut Display) -> anyhow::Result<()> {
                 .map(|f| f.unwrap())
                 .collect::<Vec<u8>>();
             file.write(0, &bytes)?;
+            hapi::println!("Extracted \"{}\"", path);
             continue;
         }
         if part.is_dir() {
             Directory::create(&path)?;
+            hapi::println!("Extracted \"{}\"", path);
         }
-        hapi::println!("Extracted \"{}\"", path);
         display.push_stdout()?;
     }
 
@@ -140,19 +113,12 @@ fn startup_process(display: &mut Display) -> anyhow::Result<()> {
         }
     };
     display.push_stdout()?;
-    let Some(process) = Process::spawn_sub(&boot_process_bin) else {
-        hapi::println!("\x1b[31mFailed to spawn startup process\x1b[97m");
+    if let Some(_) = Process::spawn_sub(&boot_process_bin) {
+        hapi::println!("\x1b[32mSuccesfully spawned startup process\x1b[97m");
         display.push_stdout()?;
-        return Ok(());
-    };
-
-    hapi::stdout::clear();
-    loop {
-        std::thread::sleep(Duration::from_millis(200));
-        if let Some(out) = process.stdout() {
-            display.set_text(out)?;
-            break;
-        }
+    } else {
+        hapi::println!("\x1b[31mFailed to spawn startup process \x1b[97m");
+        display.push_stdout()?;
     }
 
     Ok(())
