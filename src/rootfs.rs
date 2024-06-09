@@ -1,6 +1,6 @@
 use std::{
     io::{Cursor, Read},
-    ptr::{addr_of, addr_of_mut},
+    ptr::addr_of,
     sync::{Arc, Mutex, Once},
     time::Duration,
 };
@@ -21,6 +21,7 @@ pub fn fetch_rootfs() -> anyhow::Result<()> {
     request.wait()?;
 
     if request.status()? == RequestStatus::Fail {
+        Tui::log("Request exited with status `RequestStatus::Fail`");
         return Err(anyhow::anyhow!(
             "Request exited with status `RequestStatus::Fail`"
         ));
@@ -34,9 +35,10 @@ pub fn fetch_rootfs() -> anyhow::Result<()> {
 /// Extract the rootfs
 pub fn extract_rootfs() -> anyhow::Result<()> {
     let rootfs = unsafe { ROOTFS.as_ref().unwrap() };
-    let rootfs = rootfs
-        .try_lock()
-        .map_err(|e| anyhow::anyhow!("Could not aquire rootfs lock: {}", e))?;
+    let rootfs = rootfs.try_lock().map_err(|e| {
+        Tui::log(format!("Could not aquire rootfs lock: {}", e));
+        anyhow::anyhow!("Could not aquire rootfs lock: {}", e)
+    })?;
     let mut cursor = Cursor::new(rootfs.clone());
     let mut rootfs = zip::ZipArchive::new(&mut cursor)?;
 
