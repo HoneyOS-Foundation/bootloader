@@ -2,7 +2,6 @@ use std::{
     io::{Cursor, Read},
     ptr::addr_of,
     sync::{Arc, Mutex, Once},
-    time::Duration,
 };
 
 use hapi::{
@@ -67,7 +66,6 @@ pub fn extract_rootfs() -> anyhow::Result<()> {
             Directory::create(&path)?;
             Tui::log(format!("Extracted \"{}\"", path));
         }
-        std::thread::sleep(Duration::from_millis(100));
     }
 
     Ok(())
