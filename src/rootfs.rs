@@ -2,6 +2,7 @@ use std::{
     io::{Cursor, Read},
     ptr::addr_of,
     sync::{Arc, Mutex, Once},
+    time::Duration,
 };
 
 use hapi::{
@@ -9,7 +10,7 @@ use hapi::{
     network::{Request, RequestMethod, RequestStatus},
 };
 
-use crate::tui::Tui;
+use crate::tui::tasks::TaskUi;
 
 /// The rootfs stored in memory
 static mut ROOTFS: Option<Arc<Mutex<Vec<u8>>>> = None;
@@ -20,7 +21,7 @@ pub fn fetch_rootfs() -> anyhow::Result<()> {
     request.wait()?;
 
     if request.status()? == RequestStatus::Fail {
-        Tui::log("Request exited with status `RequestStatus::Fail`");
+        TaskUi::log("Request exited with status `RequestStatus::Fail`");
         return Err(anyhow::anyhow!(
             "Request exited with status `RequestStatus::Fail`"
         ));
@@ -35,7 +36,7 @@ pub fn fetch_rootfs() -> anyhow::Result<()> {
 pub fn extract_rootfs() -> anyhow::Result<()> {
     let rootfs = unsafe { ROOTFS.as_ref().unwrap() };
     let rootfs = rootfs.try_lock().map_err(|e| {
-        Tui::log(format!("Could not aquire rootfs lock: {}", e));
+        TaskUi::log(format!("Could not aquire rootfs lock: {}", e));
         anyhow::anyhow!("Could not aquire rootfs lock: {}", e)
     })?;
     let mut cursor = Cursor::new(rootfs.clone());
@@ -45,7 +46,7 @@ pub fn extract_rootfs() -> anyhow::Result<()> {
         let part = match rootfs.by_index(i) {
             Ok(p) => p,
             Err(e) => {
-                Tui::log(format!("\x1b[31mFailed to read part: \x1b[97m{}", e));
+                TaskUi::log(format!("\x1b[31mFailed to read part: \x1b[97m{}", e));
                 continue;
             }
         };
@@ -59,13 +60,15 @@ pub fn extract_rootfs() -> anyhow::Result<()> {
                 .map(|f| f.unwrap())
                 .collect::<Vec<u8>>();
             file.write(0, &bytes)?;
-            Tui::log(format!("Extracted \"{}\"", path));
+            TaskUi::log(format!("Extracted \"{}\"", path));
             continue;
         }
         if part.is_dir() {
             Directory::create(&path)?;
-            Tui::log(format!("Extracted \"{}\"", path));
+            TaskUi::log(format!("Extracted \"{}\"", path));
         }
+
+        std::thread::sleep(Duration::from_secs_f32(0.2));
     }
 
     Ok(())

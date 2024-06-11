@@ -30,15 +30,15 @@ const FRAME_DELAY: f64 = 0.1;
 static mut TUI_STATE: Option<Arc<RwLock<TuiState>>> = None;
 
 /// The terminal ui for the bootloader
-pub struct Tui;
+pub struct TaskUi;
 
-/// The state of the terminal ui
+/// The state of the task tracking ui
 struct TuiState {
     log: String,
     running: bool,
 }
 
-impl Tui {
+impl TaskUi {
     /// Initialize the terminal ui
     pub fn init_once() {
         static SET_HOOK: Once = Once::new();
@@ -58,7 +58,7 @@ impl Tui {
         state.log.push_str(&format!(
             "\n{}: {}",
             humantime::format_rfc3339(time),
-            string
+            &string
         ));
     }
 
@@ -114,9 +114,16 @@ impl Tui {
                 let formatted_log = format_log(&state.log);
 
                 Display::set_text(&format!("\x1b[97m{}{}", formatted_log, log_current_task));
-                running = state.running;
+                running = TaskExecutor::running() && state.running;
             }
         });
+    }
+
+    /// Stop the drawing thread
+    /// will do nothing if the tui is not running.
+    pub fn stop() {
+        let mut state = TuiState::writer();
+        state.running = false;
     }
 }
 

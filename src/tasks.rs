@@ -1,6 +1,6 @@
 use std::sync::{Arc, Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::tui::Tui;
+use crate::tui::tasks::TaskUi;
 
 /// The task manager state
 static mut TASK_MANAGER_STATE: Option<Arc<RwLock<TaskManagerState>>> = None;
@@ -98,7 +98,7 @@ impl TaskExecutor {
                 state.running = result;
             };
 
-            Tui::register_completed(i as u32);
+            TaskUi::register_completed(i as u32);
 
             if !result {
                 break;
