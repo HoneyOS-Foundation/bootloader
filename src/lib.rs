@@ -45,8 +45,18 @@ fn main() -> anyhow::Result<()> {
         "Js Result: {:?}",
         hapi::js::eval(
             "
-        let name = 'Bob';
-        `Hello, ${name}`
+            class Person {
+                constructor(name) {
+                    this.name = name;
+                }
+                greet() {
+                    console.log(`Hello, my name is ${this.name}`);
+                }
+            }
+
+            const person = new Person('Alice');
+            person.greet();
+            person
     "
         )
     ));
