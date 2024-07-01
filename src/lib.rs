@@ -2,7 +2,7 @@ pub mod rootfs;
 pub mod tasks;
 pub mod tui;
 
-use std::time::Duration;
+use std::{ffi::CString, time::Duration};
 
 use hapi::{
     display::Display,
@@ -16,6 +16,7 @@ use tui::tasks::TaskUi;
 #[hapi::main]
 fn main() -> anyhow::Result<()> {
     JsConsoleLogger::init();
+
     Display::assume_control()?;
 
     // Initialize the tracker ui
@@ -39,7 +40,16 @@ fn main() -> anyhow::Result<()> {
 
     TaskUi::stop();
 
-    Display::push_stdout();
+    Display::set_text("Rootfs extracted, running js eval");
+    Display::set_text(format!(
+        "Js Result: {:?}",
+        hapi::js::eval(
+            "
+        let name = 'Bob';
+        `Hello, ${name}`
+    "
+        )
+    ));
     Display::release_control()?;
 
     Ok(())
