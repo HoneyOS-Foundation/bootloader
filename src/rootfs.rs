@@ -67,8 +67,7 @@ pub fn extract_rootfs() -> anyhow::Result<()> {
             Directory::create(&path)?;
             TaskUi::log(format!("Extracted \"{}\"", path));
         }
-
-        std::thread::sleep(Duration::from_secs_f32(0.2));
+        std::thread::sleep(Duration::from_millis(200));
     }
 
     Ok(())

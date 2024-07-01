@@ -7,7 +7,7 @@ use std::time::Duration;
 use hapi::{
     display::Display,
     fs::{fslabel::FsLabel, RamFileSystem},
-    js_console::JsConsoleLogger,
+    js::JsConsoleLogger,
 };
 use rootfs::{extract_rootfs, fetch_rootfs};
 use tasks::TaskExecutor;
@@ -39,7 +39,8 @@ fn main() -> anyhow::Result<()> {
 
     TaskUi::stop();
 
-    std::thread::sleep(Duration::from_millis(100));
+    Display::push_stdout();
     Display::release_control()?;
+
     Ok(())
 }
